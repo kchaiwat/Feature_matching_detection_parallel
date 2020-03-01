@@ -1,4 +1,4 @@
-# Object_detect_parallel
+# Feature_matching_detection_parallel
  
  # Setting
  1. Select method (orb, sift, surf)
