@@ -6,6 +6,8 @@ from matplotlib import pyplot as plt
 from time import clock
 import imutils
 import multiprocessing as mp
+import mysql.connector
+import pandas as pd
 
 def save_desc_file(train_path, method, condition):
     # Start the stopwatch / counter
@@ -92,15 +94,62 @@ def countkeypointgood_imgtest(method, i, des_list, desctest):
                 good.append(m)
     return len(good)
 
-def check_goodmatch(results, image_paths, MIN_MATCH_COUNT):
+def add_product(results, df, mydb):
+    # Add product sql IMPORT CSV to MATCH PRODUCT
+    filename = image_paths[results.index(max(results))]
+    # Add product sql IMPORT CSV to MATCH PRODUCT
+    filename = os.path.basename(filename)
+    filename = os.path.splitext(filename)[0]
+    print("filename", filename)
+    product_item = str(df[df['product_name']==filename].product_id.sum())
+    print("product_item", product_item)
+    # connect DB query
+    mycursor = mydb.cursor()
+
+    # Select pamount from cart where pid like product_item to pInTable
+    sql = "SELECT pamount FROM cart WHERE pid LIKE %s"
+    val = (product_item, )
+    mycursor.execute(sql, val)
+    pInTable = mycursor.fetchone()
+    
+    # If pInTable doesn't have
+    if not pInTable:
+        # Add product to cart by Insert
+        sql = "INSERT INTO cart (pid, pamount) VALUES (%s, %s)"
+        val = (product_item, "1")
+        mycursor.execute(sql, val)
+        mydb.commit()
+    
+    # Else pInTable already have product in cart
+    else:
+        # Get amount of product from cart where pid like product_item
+        mycursor = mydb.cursor()
+        sql = "SELECT pamount FROM cart WHERE pid LIKE %s"
+        val = (product_item, )
+        mycursor.execute(sql, val)
+        amountp = mycursor.fetchone()
+        amountp = amountp[0]+1
+
+        # Add product to cart by update from old amount
+        sql = "UPDATE cart SET pamount=%s WHERE pid = %s"
+        val = (amountp, product_item)
+        mycursor.execute(sql, val)
+        mydb.commit()
+        print(mycursor.rowcount, "record(s) affected")
+
+def check_goodmatch(results, image_paths, MIN_MATCH_COUNT, df, mydb):
     # Start the stopwatch / counter
     t1_start = clock()
     # Draw Matches Homography if good matches more then MIN_MATCH_COUNT What's 25
     if max(results) > MIN_MATCH_COUNT:
+        
+        # Add product to cart
+        add_product(results, df, mydb)
+
         # # Display the resulting frame
         img = cv2.imread(image_paths[results.index(max(results))])
         plt.imshow(cv2.cvtColor(img, cv2.COLOR_BGR2RGB),), plt.show()
-    
+
     # Stop the stopwatch / counter
     t1_stop = clock()
     # # Print Elapsed time during t1_stop-t1_start
@@ -148,7 +197,7 @@ def parallel_detect(method,des_list,desctest):
     print("Count Match Parallel Elapsed time during in seconds:", t1_stop-t1_start)
     return results
 
-def start_video_capture(des_list, image_paths, MIN_MATCH_COUNT):
+def start_video_capture(des_list, image_paths, MIN_MATCH_COUNT, df, mydb):
     # Create cam by Video file or Capture moniter
     cam = cv2.VideoCapture(0) #Capture moniter
     cv2.namedWindow("Capture video with parallel orb") # Create Windows of text to detect
@@ -181,7 +230,7 @@ def start_video_capture(des_list, image_paths, MIN_MATCH_COUNT):
             results = parallel_detect(method,des_list,desctest)
 
             # Check Good match if more then MIN_MATCH_COUNT do in funtion
-            check_goodmatch(results, image_paths, MIN_MATCH_COUNT)
+            check_goodmatch(results, image_paths, MIN_MATCH_COUNT, df, mydb)
 
             # Stop the stopwatch / counter
             t1_stop = clock()
@@ -192,8 +241,22 @@ def start_video_capture(des_list, image_paths, MIN_MATCH_COUNT):
     cam.release()
     cv2.destroyAllWindows()
 
+def connectDB():
+     # Sometimes reading CSV for Excel need encoding
+    df = pd.read_csv('productnew.csv', encoding="ISO-8859-1")
+    
+    # connect Database "cal_object_detection"
+    mydb = mysql.connector.connect(
+        host="localhost",
+        user="root",
+        passwd="",
+        port="3307", #3306 is defalt
+        database="cal_object_detection"
+    )
+    return df, mydb
 
 if __name__ == "__main__":
+    df, mydb = connectDB()
     print("================ Detail =================")
     method = "orb" # Initiate detector  // orb // sift // surf
     print("Use CPU CORE: ",mp.cpu_count())
@@ -203,4 +266,4 @@ if __name__ == "__main__":
     detector = select_method(method)
     des_list, image_paths = save_desc_file(train_path, method, condition)
     print("==============================================")
-    start_video_capture(des_list, image_paths, MIN_MATCH_COUNT) # Start video capture to detection
+    start_video_capture(des_list, image_paths, MIN_MATCH_COUNT, df, mydb) # Start video capture to detection
