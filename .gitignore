@@ -3,3 +3,4 @@ des_list_sift.txt
 des_list.surf.txt
 *.txt
 *.zip
+.DS_Store
